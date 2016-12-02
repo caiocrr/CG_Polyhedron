@@ -1,103 +1,151 @@
 <!DOCTYPE html>
 <html lang="en">
-    <head>
-        <title>three.js webgl - geometry - cube</title>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
-    </head>
-    <body>
-
-        <script src="js/three.js"></script>
-        <script src="js/Tween.js"></script>
-        <script src="js/OrbitControls.js"></script>
-        <script>
-            var controls, rotspeed, scene, camera,
-                    renderer, geom, stack, pai, marcacao,
-                    arestas, faces, graph, vertices, verticeAtual,
-                    distancia, ordemBFS, eixosRotacao, pontosBase, selected,
-                    angle;
-            var mouse = {x: 0, y: 0};
-            var targetList = [];
-            var geometries = [];
+<head>
+    <title>three.js webgl - geometry - cube</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+</head>
+<body>
+<style>
 
 
-            function init() {
+</style>
 
-                scene = new THREE.Scene();
-                camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+<div id="content">
+    <div id="info"></div>
+</div>
 
-                camera.position.set(-5, 1, 3);
-                camera.lookAt(scene.position);
 
-                rotSpeed = 0.001;
-                controls = new THREE.OrbitControls(camera);
-                controls.addEventListener('change', render);
-                scene.add(camera);
-                renderer = new THREE.WebGLRenderer();
-                renderer.setSize(window.innerWidth, window.innerHeight);
-                document.body.appendChild(renderer.domElement);
+<script src="js/three.js"></script>
+<script src="js/dat.gui.min.js"></script>
+<script src="js/Tween.js"></script>
+<script src="js/OrbitControls.js"></script>
 
-                switch (poliedro) {
-                    case 'octaedro':
-                        initOctaedro();
-                        break;
 
-                    case 'icosaedro':
-                        initIcosaedro();
-                        break;
+<script id="template" type="notjs">
+			<div class="scene"></div>
 
-                    case 'tetraedro':
-                        initTetraedro();
-                        break;
-                }
 
-                for (var i = 0; i < faces.length; i += 1) {
-                    geom = new THREE.Geometry();
-                    geom.vertices = vertices;
-                    var face = faces[i];
-                    var color = Math.random() * 0xffffff;
-                    face.color.setHex(color);
-                    geom.faces = [face];
-                    geom.computeFaceNormals();
-                    var material = new THREE.MeshBasicMaterial({vertexColors: THREE.FaceColors, side: THREE.DoubleSide});
-                    var mesh = new THREE.Mesh(geom, material);
-                    scene.add(mesh);
-                    geometries.push(geom);
-                    targetList.push(mesh);
 
-                }
 
-                document.addEventListener('mousedown', abrirPoliedro, false);
-                window.addEventListener('resize', onWindowResize, false);
+</script>
 
-            }
 
-            function initOctaedro() {
-                angle = (180 - 109.47122) * 0.0174533;
-                vertices = [
-                    new THREE.Vector3(1, 0, 0), // 0 
-                    new THREE.Vector3(0, 1, 0), // 1
-                    new THREE.Vector3(0, 0, 1), // 2 
-                    new THREE.Vector3(-1, 0, 0), // 3
-                    new THREE.Vector3(0, -1, 0), // 4
-                    new THREE.Vector3(0, 0, -1) // 5
-                ];
+<script>
+    var controls, scene, camera,
+        renderer, stack, pai, marcacao,
+        arestas, faces, graph, vertices, verticeAtual,
+        windowWidth, windowHeight, distancia, ordemBFS,
+        eixosRotacao, pontosBase, selected, zPos,
+        last, verticesAbertos, texture, effectController,
+        material, textureSelected, open, UVcoordinates, offsetPlane,
+        angle, scenes, textureName, cameraPosition,poliedro,gui,checkEditor,
+        intersection = new THREE.Vector3(),
+        raycaster = new THREE.Raycaster(),
+        plane = new THREE.Plane(),
+        objects = [],
+        offsetMouse = new THREE.Vector3(),
+        INTERSECTED, SELECTED, editorPlane;
+    var SELECTEDS = [];
+    var mouse = {x: 0, y: 0};
+    var targetList = [];
+    var editOn = false;
+    var geometries = [];
+    var scenes = [];
+    var lines = [];
+    offsetPlane = new THREE.Vector2(7, 0);
 
-                faces = [
-                    new THREE.Face3(0, 1, 2), // 0
-                    new THREE.Face3(3, 1, 5), // 1
-                    new THREE.Face3(5, 1, 0), // 2
-                    new THREE.Face3(2, 1, 3), // 3
-                    new THREE.Face3(2, 4, 0), // 4
-                    new THREE.Face3(5, 4, 3), // 5
-                    new THREE.Face3(0, 4, 5), // 6
-                    new THREE.Face3(3, 4, 2)  // 7
+    verticesAbertos = []
+    UVcoordinates = [];
 
-                ];
-                resetVertices();
+    renderer = new THREE.WebGLRenderer();
+    renderer.autoClear = false;
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    function init() {
+
+
+        scene = new THREE.Scene();
+        camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+
+
+        camera.position.set(offsetPlane.x, offsetPlane.y, -10);
+        cameraPosition = camera.position.clone();
+        camera.lookAt(scene.position);
+        scene.userData.camera = camera;
+        scene.userData.rotSpeed = 0.000;
+        scenes.push(scene);
+
+
+        open = false;
+
+
+        controls = new THREE.OrbitControls(camera);
+        controls.addEventListener('change', render);
+        scene.add(camera);
+
+
+        textureName = "images/noel.jpg";
+        texture = new THREE.TextureLoader().load(textureName);
+        texture.wrapS = THREE.RepeatWrapping;
+        texture.wrapT = THREE.RepeatWrapping;
+
+        material = new THREE.MeshBasicMaterial({map: texture, side: THREE.DoubleSide});
+        initIcosaedro();
+
+
+//
+        for (var i = 0; i < faces.length; i += 1) {
+            var geom = new THREE.Geometry();
+            geom.vertices = vertices;
+            var face = faces[i];
+            geom.faces = [face];
+            geom.dynamic = true;
+            geom.computeFaceNormals();
+
+
+            geometries.push(geom);
+
+            var mesh = new THREE.Mesh(geom);
+            mesh.name = Math.random().toString(36).substring(7);
+            targetList.push(mesh);
+            scene.add(mesh);
+
+        }
+
+
+        document.addEventListener('mousedown', abrirPoliedro, false);
+        window.addEventListener('resize', onWindowResize, false);
+
+    }
+
+    function    initOctaedro() {
+        angle = (180 - 109.47122) * 0.0174533;
+        vertices = [
+            new THREE.Vector3(1, 0, 0), // 0
+            new THREE.Vector3(0, 1, 0), // 1
+            new THREE.Vector3(0, 0, 1), // 2
+            new THREE.Vector3(-1, 0, 0), // 3
+            new THREE.Vector3(0, -1, 0), // 4
+            new THREE.Vector3(0, 0, -1) // 5
+        ];
+
+        faces = [
+            new THREE.Face3(0, 1, 2), // 0
+            new THREE.Face3(3, 1, 5), // 1
+            new THREE.Face3(5, 1, 0), // 2
+            new THREE.Face3(2, 1, 3), // 3
+            new THREE.Face3(2, 4, 0), // 4
+            new THREE.Face3(5, 4, 3), // 5
+            new THREE.Face3(0, 4, 5), // 6
+            new THREE.Face3(3, 4, 2)  // 7
+
+        ];
+        resetVertices();
 
 //                graph = [
-//                    // 0 1 2 3 4 5 6 7 
+//                    // 0 1 2 3 4 5 6 7
 //                    [0, 0, 1, 1, 1, 0, 0, 0],
 //                    [0, 0, 1, 1, 0, 1, 0, 0],
 //                    [1, 1, 0, 0, 0, 0, 1, 0],
@@ -109,426 +157,1169 @@
 //                ];
 
 
-                graph = [
-                    // 0 1 2 3 4 5 6 7 
-                    [2, 3, 4],
-                    [2, 3, 5],
-                    [0, 1, 6],
-                    [0, 1, 7],
-                    [0, 6, 7],
-                    [1, 6, 7],
-                    [2, 4, 5],
-                    [3, 4, 5]
-                ];
-            }
+        graph = [
+            // 0 1 2 3 4 5 6 7
+            [2, 3, 4],
+            [2, 3, 5],
+            [0, 1, 6],
+            [0, 1, 7],
+            [0, 6, 7],
+            [1, 6, 7],
+            [2, 4, 5],
+            [3, 4, 5]
+        ];
+    }
 
-            function initIcosaedro() {
-                angle = (180 - 138.19) * 0.0174533;
-                var t = (1.0 + Math.sqrt(5.0)) / 2.0;
-                vertices = [
-                    new THREE.Vector3(-1, t, 0),
-                    new THREE.Vector3(1, t, 0),
-                    new THREE.Vector3(-1, -t, 0),
-                    new THREE.Vector3(1, -t, 0),
-                    new THREE.Vector3(0, -1, t),
-                    new THREE.Vector3(0, 1, t),
-                    new THREE.Vector3(0, -1, -t),
-                    new THREE.Vector3(0, 1, -t),
-                    new THREE.Vector3(t, 0, -1),
-                    new THREE.Vector3(t, 0, 1),
-                    new THREE.Vector3(-t, 0, -1),
-                    new THREE.Vector3(-t, 0, 1)
-                ];
-                faces = [
-                    new THREE.Face3(0, 11, 5), //0 
-                    new THREE.Face3(0, 5, 1),
-                    new THREE.Face3(0, 1, 7),
-                    new THREE.Face3(0, 7, 10),
-                    new THREE.Face3(0, 10, 11),
-                    new THREE.Face3(1, 5, 9), //5
-                    new THREE.Face3(5, 11, 4),
-                    new THREE.Face3(11, 10, 2),
-                    new THREE.Face3(10, 7, 6),
-                    new THREE.Face3(7, 1, 8),
-                    new THREE.Face3(3, 9, 4), //10
-                    new THREE.Face3(3, 4, 2),
-                    new THREE.Face3(3, 2, 6),
-                    new THREE.Face3(3, 6, 8),
-                    new THREE.Face3(3, 8, 9),
-                    new THREE.Face3(4, 9, 5), //15
-                    new THREE.Face3(2, 4, 11),
-                    new THREE.Face3(6, 2, 10),
-                    new THREE.Face3(8, 6, 7),
-                    new THREE.Face3(9, 8, 1)
-                ];
-                resetVertices();
+    function initIcosaedro() {
+        angle = (180 - 138.19) * 0.0174533;
+        var t = (1.0 + Math.sqrt(5.0)) / 2.0;
+        vertices = [
+            new THREE.Vector3(-1, t, 0),
+            new THREE.Vector3(1, t, 0),
+            new THREE.Vector3(-1, -t, 0),
+            new THREE.Vector3(1, -t, 0),
+            new THREE.Vector3(0, -1, t),
+            new THREE.Vector3(0, 1, t),
+            new THREE.Vector3(0, -1, -t),
+            new THREE.Vector3(0, 1, -t),
+            new THREE.Vector3(t, 0, -1),
+            new THREE.Vector3(t, 0, 1),
+            new THREE.Vector3(-t, 0, -1),
+            new THREE.Vector3(-t, 0, 1)
+        ];
+        faces = [
+            new THREE.Face3(0, 11, 5), //0
+            new THREE.Face3(0, 5, 1),
+            new THREE.Face3(0, 1, 7),
+            new THREE.Face3(0, 7, 10),
+            new THREE.Face3(0, 10, 11),
+            new THREE.Face3(1, 5, 9), //5
+            new THREE.Face3(5, 11, 4),
+            new THREE.Face3(11, 10, 2),
+            new THREE.Face3(10, 7, 6),
+            new THREE.Face3(7, 1, 8),
+            new THREE.Face3(3, 9, 4), //10
+            new THREE.Face3(3, 4, 2),
+            new THREE.Face3(3, 2, 6),
+            new THREE.Face3(3, 6, 8),
+            new THREE.Face3(3, 8, 9),
+            new THREE.Face3(4, 9, 5), //15
+            new THREE.Face3(2, 4, 11),
+            new THREE.Face3(6, 2, 10),
+            new THREE.Face3(8, 6, 7),
+            new THREE.Face3(9, 8, 1)
+        ];
+        resetVertices();
 
-                graph = [
-                    [1, 4, 6], [0, 2, 5], [1, 3, 9], [2, 4, 8],
-                    [0, 3, 7], [1, 15, 19], [0, 15, 16], [4, 16, 17],
-                    [3, 17, 18], [2, 18, 19], [11, 14, 15], [10, 12, 16],
-                    [11, 13, 17], [12, 14, 18], [10, 13, 19], [5, 6, 10],
-                    [6, 7, 11], [7, 8, 12], [8, 9, 13], [5, 9, 14]
-                ];
-            }
+        graph = [
+            [1, 4, 6], [0, 2, 5], [1, 3, 9], [2, 4, 8],
+            [0, 3, 7], [1, 15, 19], [0, 15, 16], [4, 16, 17],
+            [3, 17, 18], [2, 18, 19], [11, 14, 15], [10, 12, 16],
+            [11, 13, 17], [12, 14, 18], [10, 13, 19], [5, 6, 10],
+            [6, 7, 11], [7, 8, 12], [8, 9, 13], [5, 9, 14]
+        ];
+    }
 
-            function initTetraedro() {
-                angle = (180 - 70.53) * 0.0174533;
+    function initTetraedro() {
+        angle = (180 - 70.53) * 0.0174533;
 
-                vertices = [
-                    new THREE.Vector3(1, 1, 1),
-                    new THREE.Vector3(-1, -1, 1),
-                    new THREE.Vector3(-1, 1, -1),
-                    new THREE.Vector3(1, -1, -1)
-                ];
-                faces = [
-                    new THREE.Face3(2, 1, 0),
-                    new THREE.Face3(0, 3, 2),
-                    new THREE.Face3(1, 3, 0),
-                    new THREE.Face3(2, 3, 1)
-                ];
+        vertices = [
+            new THREE.Vector3(1, 1, 1),
+            new THREE.Vector3(-1, -1, 1),
+            new THREE.Vector3(-1, 1, -1),
+            new THREE.Vector3(1, -1, -1)
+        ];
+        faces = [
+            new THREE.Face3(2, 1, 0),
+            new THREE.Face3(0, 3, 2),
+            new THREE.Face3(1, 3, 0),
+            new THREE.Face3(2, 3, 1)
+        ];
 
-                resetVertices();
+        resetVertices();
 
-                graph = [
-                    [1, 2, 3],
-                    [0, 2, 3],
-                    [0, 1, 3],
-                    [0, 1, 2]
-                ];
-            }
+        graph = [
+            [1, 2, 3],
+            [0, 2, 3],
+            [0, 1, 3],
+            [0, 1, 2]
+        ];
+    }
 
 
-
-            function abrirPoliedro(event)
-            {
+    function abrirPoliedro(event) {
 //                event.preventDefault();
-                console.log("abrir poliedro..");
+        console.log("abrir poliedro..");
+        console.log(targetList.length);
 
 
+        // update the mouse variable
+        mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+        mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
 
-                // update the mouse variable
-                mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-                mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-
-                var ray = new THREE.Raycaster();
-                ray.setFromCamera(mouse, camera);
-                // create an array containing all objects in the scene with which the ray intersects
-                var intersects = ray.intersectObjects(targetList);
-                // if there is one (or more) intersections
-                if (intersects.length > 0)
-                {
-                    BFSExplorer(faces.indexOf(intersects[ 0 ].face));
+        var ray = new THREE.Raycaster();
+        ray.setFromCamera(mouse, camera);
+        // create an array containing all objects in the scene with which the ray intersects
+        var intersects = ray.intersectObjects(targetList);
+        // if there is one (or more) intersections
+        if (intersects.length > 0) {
+            BFSExplorer(faces.indexOf(intersects[0].face));
 //                    console.log("Tabela de pai: " + pai);
-                    BFSExecuter(faces.indexOf(intersects[ 0 ].face));
-                    selected = intersects[ 0 ].face;
-                }
+            BFSExecuter(faces.indexOf(intersects[0].face));
+            selected = intersects[0].face;
+            open = true;
+        }
 
-//                console.log("done para " + filho);
+//                console.log("done para " + faces.indexOf(intersects[0].face));
 
-            }
+    }
 
-            function fecharPoliedro(event) {
+    function fecharPoliedro(event) {
 //                event.preventDefault();
 
 
-                console.log("fechar poliedro..");
+        console.log("fechar poliedro..");
 
-                mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-                mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+        mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+        mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
 
-                var ray = new THREE.Raycaster();
-                ray.setFromCamera(mouse, camera);
-                // create an array containing all objects in the scene with which the ray intersects
-                var intersects = ray.intersectObjects(targetList);
-                // if there is one (or more) intersections
-                if (intersects.length > 0)
-                {
-                    if (selected === intersects[ 0 ].face) {
-                        for (var i = ordemBFS.length - 1; i > 0; i -= 1) {
-                            transformRecurs(eixosRotacao[ordemBFS[i]], -angle, ordemBFS[i], pontosBase[ordemBFS[i]]);
+        var ray = new THREE.Raycaster();
+        ray.setFromCamera(mouse, camera);
+        // create an array containing all objects in the scene with which the ray intersects
+        var intersects = ray.intersectObjects(targetList);
+        // if there is one (or more) intersections
+        if (intersects.length > 0) {
+            if (selected === intersects[0].face) {
+                for (var i = ordemBFS.length - 1; i > 0; i -= 1) {
+                    transformRecurs(eixosRotacao[ordemBFS[i]], -angle, ordemBFS[i], pontosBase[ordemBFS[i]]);
+                }
+                open = false;
+                document.addEventListener('mousedown', abrirPoliedro, false);
+                document.removeEventListener("mousedown", fecharPoliedro);
+            }
+
+        }
+
+    }
+
+
+    function animate() {
+        requestAnimationFrame(animate);
+        TWEEN.update();
+        update();
+        render();
+    }
+
+    function render() {
+
+        var camera = scenes[0].userData.camera;
+        var x = camera.position.x;
+        var z = camera.position.z;
+
+        var rotSpeed = scenes[0].userData.rotSpeed;
+        camera.position.x = x * Math.cos(rotSpeed) + z * Math.sin(rotSpeed);
+        camera.position.z = z * Math.cos(rotSpeed) - x * Math.sin(rotSpeed);
+        camera.lookAt(scenes[0].position);
+
+        renderer.render(scenes[0], camera);
+
+
+    }
+
+
+    function update() {
+        controls.update();
+    }
+
+    function onWindowResize() {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    function BFSExplorer(indexF) {
+        //pai[0]=face;
+        //marca indexF
+        //para cada vizinho de indexF
+        //  unshift no stack
+        //  pai do vizinho = face
+        //ENQUANTO STACK não estiver vazio do:
+        //  POP STACK faceTEMP;]
+        //  MARCA FACETEMP
+        //  para cada vizinho de faceTEMP que não esta marcados
+        //      unshift no stack
+        //      pai[vizinhoFACE] = faceTEMP;
+        //transformar faceTEMP em relação ao PAI
+        stack = new Array();
+        pai = [];
+        marcacao = [];
+        distancia = [];
+        ordemBFS = new Array();
+        eixosRotacao = [];
+        pontosBase = [];
+
+        pai[indexF] = indexF;
+        distancia[indexF] = 0;
+        ordemBFS.push(indexF);
+        console.log(indexF);
+        marcacao[indexF] = true;
+
+        //pegar os vizinhos
+        for (var i = 0; i < graph[indexF].length; i += 1) {
+            if (!marcacao[graph[indexF][i]]) {
+                stack.unshift(graph[indexF][i]);
+                pai[graph[indexF][i]] = indexF;
+                marcacao[graph[indexF][i]] = true;
+                distancia[graph[indexF][i]] = 1;
+            }
+        }
+
+        //ENQUANTO STACK não estiver vazio do:
+        while (stack.length > 0) {
+            var faceTemp = stack.pop();
+            ordemBFS.push(faceTemp);
+            for (var i = 0; i < graph[faceTemp].length; i += 1) {
+                if (!marcacao[graph[faceTemp][i]]) {
+                    stack.unshift(graph[faceTemp][i]);
+                    pai[graph[faceTemp][i]] = faceTemp;
+                    marcacao[graph[faceTemp][i]] = true;
+                    distancia[graph[faceTemp][i]] = distancia[faceTemp] + 1;
+                }
+            }
+
+
+        }
+        console.log(ordemBFS);
+        console.log(pai);
+
+    }
+
+    function BFSExecuter(indexF) {
+        verticesAbertos = [];
+        stack = new Array();
+        marcacao = [];
+        marcacao[indexF] = true;
+        //pegar os vizinhos
+        for (var i = 0; i < graph[indexF].length; i += 1) {
+
+            if (!marcacao[graph[indexF][i]]) {
+                stack.unshift(graph[indexF][i]);
+                marcacao[graph[indexF][i]] = true;
+            }
+        }
+        var count = 0;
+
+        verticesAbertos[indexF] = [vertices[targetList[indexF].geometry.faces[0].a],
+            vertices[targetList[indexF].geometry.faces[0].b],
+            vertices[targetList[indexF].geometry.faces[0].c]];
+
+        //ENQUANTO STACK não estiver vazio do:
+        while (stack.length > 0) {
+            var faceTemp = stack.pop();
+            for (var i = 0; i < graph[faceTemp].length; i += 1) {
+                if (!marcacao[graph[faceTemp][i]]) {
+                    stack.unshift(graph[faceTemp][i]);
+                    marcacao[graph[faceTemp][i]] = true;
+                }
+            }
+            count += 1;
+
+            transformFace(faceTemp, pai[faceTemp]);
+
+
+        }
+
+
+        makeUVCoordinates(indexF);
+
+
+        document.removeEventListener("mousedown", abrirPoliedro);
+        document.addEventListener('mousedown', fecharPoliedro, false);
+    }
+
+    function makeUVCoordinates(central) {
+        var baricentro, normal, s, t, p1, geomCentral, x, y;
+
+        var b, c;
+
+
+        geomCentral = targetList[central].geometry;
+
+        baricentro = new THREE.Vector3();
+        baricentro.x = (vertices[geomCentral.faces[0].a].x + vertices[geomCentral.faces[0].b].x + vertices[geomCentral.faces[0].c].x ) / 3;
+        baricentro.y = (vertices[geomCentral.faces[0].a].y + vertices[geomCentral.faces[0].b].y + vertices[geomCentral.faces[0].c].y ) / 3;
+        baricentro.z = (vertices[geomCentral.faces[0].a].z + vertices[geomCentral.faces[0].b].z + vertices[geomCentral.faces[0].c].z ) / 3;
+
+        p1 = vertices[geomCentral.faces[0].a].clone();
+
+        s = p1.sub(baricentro);
+
+        b = vertices[geomCentral.faces[0].b].clone().sub(vertices[geomCentral.faces[0].a]);
+        c = vertices[geomCentral.faces[0].c].clone().sub(vertices[geomCentral.faces[0].a]);
+
+        normal = new THREE.Vector3();
+        normal.crossVectors(b, c);
+        normal.normalize();
+
+
+        t = new THREE.Vector3();
+        t.crossVectors(normal, s);
+
+//
+        var range = (2, 2);
+        var offset = 1;
+//
+//
+
+
+        //Atualizar coordenadas UV
+        for (var i = 0; i < targetList.length; i++) {
+            targetList[i].geometry.faceVertexUvs[0] = [];
+
+            var q1 = verticesAbertos[i][0].clone();
+            var q2 = verticesAbertos[i][1].clone();
+            var q3 = verticesAbertos[i][2].clone();
+
+            var x1 = (q1.sub(baricentro)).dot(s);
+            var y1 = (q1.sub(baricentro)).dot(t);
+
+            var x2 = (q2.sub(baricentro)).dot(s);
+            var y2 = (q2.sub(baricentro)).dot(t);
+
+            var x3 = (q3.sub(baricentro)).dot(s);
+            var y3 = (q3.sub(baricentro)).dot(t);
+
+
+            targetList[i].geometry.faceVertexUvs[0].push([
+                new THREE.Vector2((x1 + offset) / range, (y1 + offset) / range),
+                new THREE.Vector2((x2 + offset) / range, (y2 + offset) / range),
+                new THREE.Vector2((x3 + offset) / range, (y3 + offset) / range)
+            ]);
+
+            targetList[i].geometry.uvsNeedUpdate = true;
+            UVcoordinates[i] = targetList[i].geometry.faceVertexUvs[0];
+
+
+        }
+
+
+        redrawMesh();
+//        logUV();
+
+    }
+
+    function redrawMesh() {
+
+
+        for (var i = 0; i < targetList.length; i++) {
+
+            //Remover todos os MESHS
+            var selectedObject = scene.getObjectByName(targetList[i].name);
+            scene.remove(selectedObject);
+
+            //Redesenhar MESH na scene, com a posição e textura atualizada.
+
+            //Crio nova geometria
+            var geom = new THREE.Geometry();
+
+            //Importo vertices e faces ORIGINAIS
+            geom.vertices = vertices;
+            var face = faces[i];
+            geom.faces = [face];
+            geom.dynamic = true;
+            geom.computeFaceNormals();
+
+            //Coloco o UV atualizado(gerado acima) na nova geometria -- poderia ser feito diretamente tbm
+            geom.faceVertexUvs[0] = UVcoordinates[i];
+            geometries.push(geom);
+            var mesh = new THREE.Mesh(geom, material);
+            mesh.name = i;
+
+            //Coloco a matrix de transformação do mesh antigo no novo mesh, para manter a posição
+            mesh.applyMatrix(targetList[i].matrix);
+            targetList[i] = mesh;
+            scenes[0].add(mesh);
+        }
+
+
+    }
+
+
+    function clearSceneAndDraw() {
+
+
+        texture.wrapS = THREE.RepeatWrapping;
+        texture.wrapT = THREE.RepeatWrapping;
+
+        material = new THREE.MeshBasicMaterial({map: texture, side: THREE.DoubleSide});
+
+
+        for (var i = scene.children.length - 1; i >= 0; i--) {
+            var obj = scene.children[i];
+            scene.remove(obj);
+        }
+
+        for (var i = 0; i < faces.length; i += 1) {
+            var geom = new THREE.Geometry();
+            geom.vertices = vertices;
+            var face = faces[i];
+            geom.faces = [face];
+            geom.dynamic = true;
+            geom.computeFaceNormals();
+
+
+            geometries[i] = geom;
+
+            var mesh = new THREE.Mesh(geom);
+            mesh.name = Math.random().toString(36).substring(7);
+            targetList[i] = mesh;
+            scene.add(mesh);
+
+        }
+
+        resetVertices();
+        document.removeEventListener('mousedown', fecharPoliedro, false);
+        document.addEventListener('mousedown', abrirPoliedro, false);
+
+
+    }
+
+
+    function logUV() {
+        for (var i = 0; i < targetList.length; i++) {
+            console.log(targetList[i].geometry.faceVertexUvs[0][0][0]);
+            console.log(targetList[i].geometry.faceVertexUvs[0][0][1]);
+            console.log(targetList[i].geometry.faceVertexUvs[0][0][2]);
+        }
+
+    }
+    function transformFace(filho, paiF) {
+
+        //ver qual o eixo em comum entre indexF e indexP
+        var F = geometries[filho].faces[0];
+        var P = geometries[paiF].faces[0];
+
+
+        var verticesFace = [F.a, F.b, F.c];
+        var verticesPai = [P.a, P.b, P.c];
+
+        //pegar vertices em comum na ordem certa(sentido horário da face pai)
+        //complexidade de n², porem n é muito pequeno(3), então tá ok!
+        var intersec = [];
+        var jTemp = null;
+        for (var i = 0; i < verticesFace.length; i += 1) {
+            for (var j = 0; j < verticesPai.length; j += 1) {
+                if (verticesFace[i] === verticesPai[j]) {
+                    if (jTemp === null) {
+                        jTemp = j;
+                        intersec.unshift(verticesFace[i]);
+                    } else if (j < jTemp) {
+                        if (jTemp === (verticesPai.length - 1) && j === 0) {
+                            intersec.unshift(verticesFace[i]);
+                        } else {
+                            intersec.push(verticesFace[i]);
                         }
-                        document.addEventListener('mousedown', abrirPoliedro, false);
-                        document.removeEventListener("mousedown", fecharPoliedro);
-                    }
 
-                }
-
-            }
-
-
-            function animate()
-            {
-                requestAnimationFrame(animate);
-                TWEEN.update();
-                update();
-                render();
-            }
-
-            function render() {
-
-                var x = camera.position.x;
-                var z = camera.position.z;
-                camera.position.x = x * Math.cos(rotSpeed) + z * Math.sin(rotSpeed);
-                camera.position.z = z * Math.cos(rotSpeed) - x * Math.sin(rotSpeed);
-                camera.lookAt(scene.position);
-                renderer.render(scene, camera);
-
-            }
-            function update()
-            {
-                controls.update();
-            }
-
-            function onWindowResize() {
-                camera.aspect = window.innerWidth / window.innerHeight;
-                camera.updateProjectionMatrix();
-                renderer.setSize(window.innerWidth, window.innerHeight);
-            }
-
-            function BFSExplorer(indexF) {
-                //pai[0]=face;
-                //marca indexF
-                //para cada vizinho de indexF 
-                //  unshift no stack
-                //  pai do vizinho = face
-                //ENQUANTO STACK não estiver vazio do:
-                //  POP STACK faceTEMP;]
-                //  MARCA FACETEMP
-                //  para cada vizinho de faceTEMP que não esta marcados
-                //      unshift no stack
-                //      pai[vizinhoFACE] = faceTEMP;
-                //transformar faceTEMP em relação ao PAI
-                stack = new Array();
-                pai = [];
-                marcacao = [];
-                distancia = [];
-                ordemBFS = new Array();
-                eixosRotacao = [];
-                pontosBase = [];
-
-                pai[indexF] = indexF;
-                distancia[indexF] = 0;
-                ordemBFS.push(indexF);
-                console.log(indexF);
-                marcacao[indexF] = true;
-
-                //pegar os vizinhos
-                for (var i = 0; i < graph[indexF].length; i += 1) {
-                    if (!marcacao[graph[indexF][i]]) {
-                        stack.unshift(graph[indexF][i]);
-                        pai[graph[indexF][i]] = indexF;
-                        marcacao[graph[indexF][i]] = true;
-                        distancia[graph[indexF][i]] = 1;
-                    }
-                }
-
-                //ENQUANTO STACK não estiver vazio do:
-                while (stack.length > 0) {
-                    var faceTemp = stack.pop();
-                    ordemBFS.push(faceTemp);
-                    for (var i = 0; i < graph[faceTemp].length; i += 1) {
-                        if (!marcacao[graph[faceTemp][i]]) {
-                            stack.unshift(graph[faceTemp][i]);
-                            pai[graph[faceTemp][i]] = faceTemp;
-                            marcacao[graph[faceTemp][i]] = true;
-                            distancia[graph[faceTemp][i]] = distancia[faceTemp] + 1;
+                    } else {
+                        if (jTemp === 0 && j === (verticesPai.length - 1)) {
+                            intersec.push(verticesFace[i]);
+                        } else {
+                            intersec.unshift(verticesFace[i]);
                         }
+
                     }
-
-
                 }
-                console.log(ordemBFS);
-                console.log(pai);
-
             }
-
-            var test = false;
-            function BFSExecuter(indexF) {
+        }
 
 
-                stack = new Array();
-                marcacao = [];
-                marcacao[indexF] = true;
-                //pegar os vizinhos
-                for (var i = 0; i < graph[indexF].length; i += 1) {
+        var ponto0 = intersec[0];
+        var ponto1 = intersec[1];
+        var a = new THREE.Vector3();
+        var b = new THREE.Vector3();
 
-                    if (!marcacao[graph[indexF][i]]) {
-                        stack.unshift(graph[indexF][i]);
-                        marcacao[graph[indexF][i]] = true;
-                    }
-                }
-                var count = 0;
-                //ENQUANTO STACK não estiver vazio do:
-                while (stack.length > 0) {
-                    var faceTemp = stack.pop();
-                    for (var i = 0; i < graph[faceTemp].length; i += 1) {
-                        if (!marcacao[graph[faceTemp][i]]) {
-                            stack.unshift(graph[faceTemp][i]);
-                            marcacao[graph[faceTemp][i]] = true;
-                        }
-                    }
-                    count += 1;
+        console.log(verticesFace, verticesPai);
 
-                    transformFace(faceTemp, pai[faceTemp]);
+        a.copy(verticeAtual[paiF][ponto1]);
+        b.copy(verticeAtual[paiF][ponto0]);
 
 
-                }
+        if (filho === 1 && paiF === 0) {
+            console.log(intersec);
+        }
 
 
-                document.removeEventListener("mousedown", abrirPoliedro);
-                document.addEventListener('mousedown', fecharPoliedro, false);
-            }
+        var axisRotation = a.sub(b);
+        eixosRotacao[filho] = axisRotation;
+        pontosBase[filho] = ponto0;
 
 
-            function transformFace(filho, paiF) {
+        transformRecurs(axisRotation, angle, filho, ponto0, 1);
 
-                //ver qual o eixo em comum entre indexF e indexP
-                var F = geometries[filho].faces[0];
-                var P = geometries[paiF].faces[0];
+        verticesAbertos[filho] = [verticeAtual[filho][targetList[filho].geometry.faces[0].a],
+            verticeAtual[filho][targetList[filho].geometry.faces[0].b],
+            verticeAtual[filho][targetList[filho].geometry.faces[0].c]];
 
+    }
 
-                var verticesFace = [F.a, F.b, F.c];
-                var verticesPai = [P.a, P.b, P.c];
+    function transformRecurs(axisRotation, angleFace, indexF, ponto0) {
 
-                //pegar vertices em comum na ordem certa(sentido horário da face pai)
-                //complexidade de n², porem n é muito pequeno(3), então tá ok!
-                var intersec = [];
-                var jTemp = null;
-                for (var i = 0; i < verticesFace.length; i += 1) {
-                    for (var j = 0; j < verticesPai.length; j += 1) {
-                        if (verticesFace[i] === verticesPai[j]) {
-                            if (jTemp === null) {
-                                jTemp = j;
-                                intersec.unshift(verticesFace[i]);
-                            } else if (j < jTemp) {
-                                if (jTemp === (verticesPai.length - 1) && j === 0) {
-                                    intersec.unshift(verticesFace[i]);
-                                } else {
-                                    intersec.push(verticesFace[i]);
-                                }
-
-                            } else {
-                                if (jTemp === 0 && j === (verticesPai.length - 1)) {
-                                    intersec.push(verticesFace[i]);
-                                } else {
-                                    intersec.unshift(verticesFace[i]);
-                                }
-
-                            }
-                        }
-                    }
-                }
+        targetList[indexF].rotateAroundWorldAxis(verticeAtual[pai[indexF]][ponto0], axisRotation.normalize(), angleFace);
+//        targetList[indexF].updateMatrix();
+        targetList[indexF].updateMatrixWorld();
 
 
-                var ponto0 = intersec[0];
-                var ponto1 = intersec[1];
-                var a = new THREE.Vector3();
-                var b = new THREE.Vector3();
-
-                a.copy(verticeAtual[paiF][ponto1]);
-                b.copy(verticeAtual[paiF][ponto0]);
+//        console.log( targetList[indexF].geometry.vertices);
 
 
-                if (filho === 1 && paiF === 0) {
-                    console.log(intersec);
-                }
+        //Atualizar Vertices
+        for (var i = 0; i < vertices.length; i += 1) {
+            var vector = new THREE.Vector3();
+            vector.copy(targetList[indexF].geometry.vertices[i]);
+            vector.applyMatrix4(targetList[indexF].matrixWorld);
+
+            verticeAtual[indexF][i] = vector;
+        }
 
 
-
-                var axisRotation = a.sub(b);
-                eixosRotacao[filho] = axisRotation;
-                pontosBase[filho] = ponto0;
-
-
-
-                transformRecurs(axisRotation, angle, filho, ponto0, 1);
-
-            }
-
-            function transformRecurs(axisRotation, angleFace, indexF, ponto0) {
-
-
-                targetList[indexF].rotateAroundWorldAxis(verticeAtual[pai[indexF]][ponto0], axisRotation.normalize(), angleFace);
-                targetList[indexF].updateMatrixWorld();
-
-                //Atualizar Vertices 
-                for (var i = 0; i < vertices.length; i += 1) {
-                    var vector = new THREE.Vector3();
-                    vector.copy(targetList[indexF].geometry.vertices[ i ]);
-                    vector.applyMatrix4(targetList[indexF].matrixWorld);
-
-                    verticeAtual[indexF][i] = vector;
-                }
-
-
-
-                //fazer para todos os filhos
-                for (var i = 0; i < pai.length; i += 1) {
-                    if (pai[i] === indexF && i !== indexF) {
+        //fazer para todos os filhos
+        for (var i = 0; i < pai.length; i += 1) {
+            if (pai[i] === indexF && i !== indexF) {
 //                        console.log(i + " , " + pai[i]);
-                        transformRecurs(axisRotation, angleFace, i, ponto0);
+                transformRecurs(axisRotation, angleFace, i, ponto0);
 //                        console.log("Transformação aplicada para " + faces.indexOf(geometries[i].faces[0]) + " // Filho de " + indexF);
-                    }
+            }
+
+        }
+
+        last = indexF;
+    }
+
+
+    THREE.Object3D.prototype.rotateAroundWorldAxis = function () {
+
+        var q1 = new THREE.Quaternion();
+        return function (point, axis, angle) {
+            q1.setFromAxisAngle(axis, angle);
+
+            this.quaternion.multiplyQuaternions(q1, this.quaternion);
+
+            this.position.sub(point);
+            this.position.applyQuaternion(q1);
+            this.position.add(point);
+
+
+            return this;
+        };
+
+    }();
+
+
+    function resetVertices() {
+        verticeAtual = [];
+        for (var i = 0; i < faces.length; i += 1) {
+            verticeAtual[i] = [];
+            for (var j = 0; j < vertices.length; j += 1) {
+                verticeAtual[i][j] = new THREE.Vector3();
+                verticeAtual[i][j].copy(vertices[j]);
+            }
+        }
+
+        UVcoordinates = [];
+    }
+
+
+    function mudarPoliedro(p) {
+        poliedro = p;
+        for (var i = scene.children.length - 1; i >= 0; i--) {
+            var obj = scene.children[i];
+            scene.remove(obj);
+        }
+
+        switch (poliedro) {
+            case 'octaedro':
+                initOctaedro();
+                break;
+
+            case 'icosaedro':
+                initIcosaedro();
+                break;
+
+            case 'tetraedro':
+                initTetraedro();
+                break;
+        }
+        targetList = [];
+        geometries = [];
+        for (var i = 0; i < faces.length; i += 1) {
+            var geom = new THREE.Geometry();
+            geom.vertices = vertices;
+            var face = faces[i];
+            geom.faces = [face];
+            geom.dynamic = true;
+            geom.computeFaceNormals();
+
+
+            geometries.push(geom);
+
+            var mesh = new THREE.Mesh(geom);
+            mesh.name = Math.random().toString(36).substring(7);
+            targetList.push(mesh);
+            scene.add(mesh);
+
+        }
+
+
+
+        resetVertices();
+        disableEditMeshes();
+        updateGui();
+        document.removeEventListener('mousedown', fecharPoliedro, false);
+        document.addEventListener('mousedown', abrirPoliedro, false);
+    }
+
+
+
+
+    function drawTexturePlane2d() {
+        objects = [];
+
+
+        zPos = 5;
+        if (verticesAbertos.length > 0) {
+            var texture = new THREE.TextureLoader().load(textureName);
+            texture.repeat.set(10, 10);
+            texture.wrapS = THREE.RepeatWrapping;
+            texture.wrapT = THREE.RepeatWrapping;
+
+
+            var material = new THREE.MeshBasicMaterial({map: texture, side: THREE.DoubleSide});
+
+
+            var geometry = new THREE.PlaneGeometry(10, 10);
+            editorPlane = new THREE.Mesh(geometry, material);
+            editorPlane.position.set(offsetPlane.x, offsetPlane.y, zPos + 1)
+            editorPlane.name = Math.random().toString(36).substring(7);
+
+
+
+            scene.add(editorPlane);
+
+//            console.log(geometry.faceVertexUvs)
+            for (var i = 0; i < UVcoordinates.length; i++) {
+
+//                var dotGeometry = new THREE.Geometry();
+//                dotGeometry.vertices.push();
+
+                var geometry = new THREE.BoxGeometry(.5, .5, .5);
+                var object = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({color: Math.random() * 0xffffff}));
+                object.position.set(UVcoordinates[i][0][0].x + offsetPlane.x, UVcoordinates[i][0][0].y + offsetPlane.y, zPos);
+                object.geometry.name = [i, 0];
+                object.name = Math.random().toString(36).substring(7);
+//                var dotMaterial = new THREE.PointsMaterial( {color : 0x0000FF , size: 10, sizeAttenuation: false } );
+//                var dot = new THREE.Points( dotGeometry, dotMaterial );
+                scene.add(object);
+                objects.push(object);
+
+
+                var geometry = new THREE.BoxGeometry(.5, .5, .5);
+                var object = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({color: Math.random() * 0xffffff}));
+                object.position.set(UVcoordinates[i][0][1].x + offsetPlane.x, UVcoordinates[i][0][1].y + offsetPlane.y, zPos);
+                object.geometry.name = [i, 1];
+                object.name = Math.random().toString(36).substring(7);
+//                var dotMaterial = new THREE.PointsMaterial( {color : 0x0000FF , size: 10, sizeAttenuation: false } );
+//                var dot = new THREE.Points( dotGeometry, dotMaterial );
+                scene.add(object);
+                objects.push(object);
+
+
+                var geometry = new THREE.BoxGeometry(.5, .5, .5);
+                var object = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({color: Math.random() * 0xffffff}));
+                object.position.set(UVcoordinates[i][0][2].x + offsetPlane.x, UVcoordinates[i][0][2].y + offsetPlane.y, zPos);
+                object.geometry.name = [i, 2];
+                object.name = Math.random().toString(36).substring(7);
+//                var dotMaterial = new THREE.PointsMaterial( {color : 0x0000FF , size: 10, sizeAttenuation: false } );
+//                var dot = new THREE.Points( dotGeometry, dotMaterial );
+                scene.add(object);
+                objects.push(object);
+
+
+                drawLines();
+
+            }
+
+
+        }
+
+
+    }
+
+    function disableEditMeshes() {
+
+        //to clear:
+        //editorPlane
+        //objects
+        //lines
+        editOn = false;
+        effectController['editor'] = false;
+
+        if (editorPlane !== undefined) {
+            var selectedObject = scene.getObjectByName(editorPlane.name);
+            scene.remove(selectedObject);
+        }
+
+
+        for (var i = 0; i < objects.length; i++) {
+            var selectedObject = scene.getObjectByName(objects[i].name);
+            scene.remove(selectedObject);
+        }
+
+        for (var i = 0; i < lines.length; i++) {
+            var selectedObject = scene.getObjectByName(lines[i].name);
+            scene.remove(selectedObject);
+        }
+
+        //camera normalize
+//        camera.position.set(cameraPosition.x, cameraPosition.y, cameraPosition.z);
+//        console.log(cameraPosition);
+
+        objects = [];
+        lines = [];
+
+
+    }
+
+    function drawLines() {
+        var material = new THREE.LineBasicMaterial({
+            color: 0x0000ff,
+        });
+        for (var i = 0; i < UVcoordinates.length; i++) {
+            var geometry = new THREE.Geometry();
+            geometry.vertices.push(
+                new THREE.Vector3(UVcoordinates[i][0][0].x + offsetPlane.x, UVcoordinates[i][0][0].y + offsetPlane.y, zPos),
+                new THREE.Vector3(UVcoordinates[i][0][1].x + offsetPlane.x, UVcoordinates[i][0][1].y + offsetPlane.y, zPos),
+                new THREE.Vector3(UVcoordinates[i][0][2].x + offsetPlane.x, UVcoordinates[i][0][2].y + offsetPlane.y, zPos),
+                new THREE.Vector3(UVcoordinates[i][0][0].x + offsetPlane.x, UVcoordinates[i][0][0].y + offsetPlane.y, zPos)
+            );
+
+            var line = new THREE.Line(geometry, material);
+            line.name = Math.random().toString(36).substring(7);
+
+
+            scene.add(line);
+            lines.push(line);
+
+        }
+
+    }
+
+    function updateLines() {
+
+        var material = new THREE.LineBasicMaterial({
+            color: 0x0000ff,
+        });
+
+        for (var i = 0; i < lines.length; i++) {
+            var selectedObject = scene.getObjectByName(lines[i].name);
+            scene.remove(selectedObject);
+        }
+
+        for (var i = 0; i < UVcoordinates.length; i++) {
+            var geom = new THREE.Geometry();
+
+            geom.vertices = [];
+            geom.vertices.push(
+                new THREE.Vector3(UVcoordinates[i][0][0].x + offsetPlane.x, UVcoordinates[i][0][0].y + offsetPlane.y, zPos),
+                new THREE.Vector3(UVcoordinates[i][0][1].x + offsetPlane.x, UVcoordinates[i][0][1].y + offsetPlane.y, zPos),
+                new THREE.Vector3(UVcoordinates[i][0][2].x + offsetPlane.x, UVcoordinates[i][0][2].y + offsetPlane.y, zPos),
+                new THREE.Vector3(UVcoordinates[i][0][0].x + offsetPlane.x, UVcoordinates[i][0][0].y + offsetPlane.y, zPos)
+            );
+
+            var line = new THREE.Line(geom, material);
+            line.name = Math.random().toString(36).substring(7);
+
+
+            scene.add(line);
+            lines.push(line);
+
+
+        }
+
+    }
+
+
+    function onDocumentMouseMove(event) {
+        event.preventDefault();
+        mouse.x = ( event.clientX / window.innerWidth ) * 2 - 1;
+        mouse.y = -( event.clientY / window.innerHeight ) * 2 + 1;
+        raycaster.setFromCamera(mouse, camera);
+        if (SELECTED) {
+            if (raycaster.ray.intersectPlane(plane, intersection)) {
+                var position = intersection.sub(offsetMouse);
+                SELECTED.position.copy(position);
+
+
+                for (var i = 0; i < SELECTEDS.length; i++) {
+                    SELECTEDS[i].object.position.copy(new THREE.Vector3(position.x, position.y, zPos));
+//                    //update all UV
 
                 }
-            }
-
-
-            function fechaRecurs(axisRotation, angleFace, indexF, ponto0) {
-                targetList[indexF].rotateAroundWorldAxis(verticeAtual[pai[indexF]][ponto0], axisRotation.normalize(), angleFace);
-                targetList[indexF].updateMatrixWorld();
 
             }
+            return;
+        }
+        var intersects = raycaster.intersectObjects(objects);
+        if (intersects.length > 0) {
+            if (INTERSECTED != intersects[0].object) {
+                if (INTERSECTED) INTERSECTED.material.color.setHex(INTERSECTED.currentHex);
+                INTERSECTED = intersects[0].object;
+                INTERSECTED.currentHex = INTERSECTED.material.color.getHex();
+                plane.setFromNormalAndCoplanarPoint(
+                    camera.getWorldDirection(plane.normal),
+                    INTERSECTED.position);
+            }
+        } else {
+            if (INTERSECTED) INTERSECTED.material.color.setHex(INTERSECTED.currentHex);
+            INTERSECTED = null;
+        }
+    }
 
-            THREE.Object3D.prototype.rotateAroundWorldAxis = function () {
 
-                var q1 = new THREE.Quaternion();
-                return function (point, axis, angle) {
-                    q1.setFromAxisAngle(axis, angle);
+    function onDocumentMouseDown(event) {
+        event.preventDefault();
+        raycaster.setFromCamera(mouse, camera);
+        var intersects = raycaster.intersectObjects(objects);
+//        console.log(intersects);
+        if (intersects.length > 0) {
+            controls.enabled = false;
+            SELECTEDS = intersects;
+            SELECTED = intersects[0].object;
+            if (raycaster.ray.intersectPlane(plane, intersection)) {
+                offsetMouse.copy(intersection).sub(SELECTED.position);
+            }
+        }
+    }
+    function onDocumentMouseUp(event) {
+        event.preventDefault();
+        controls.enabled = true;
+        if (INTERSECTED) {
+//            for (var i = 0 ; i<UVcoordinates.length ; i ++){
+//                console.log(UVcoordinates[i][0][0])
+//                console.log(UVcoordinates[i][0][1])
+//                console.log(UVcoordinates[i][0][2])
+//            }
+//            console.log("======================================")
+//            console.log("======================================")
+            for (var i = 0; i < SELECTEDS.length; i++) {
+                console.log(SELECTEDS[i].object.geometry.name[0]);
+                UVcoordinates[SELECTEDS[i].object.geometry.name[0]][0][SELECTEDS[i].object.geometry.name[1]] = new THREE.Vector2(SELECTEDS[i].object.position.x - offsetPlane.x, SELECTEDS[i].object.position.y - offsetPlane.y);
+                //update Lines;
+                updateLines();
+            }
+            redrawMesh();
 
-                    this.quaternion.multiplyQuaternions(q1, this.quaternion);
+//            for (var i = 0 ; i<UVcoordinates.length ; i ++){
+//                console.log(UVcoordinates[i][0][0])
+//                console.log(UVcoordinates[i][0][1])
+//                console.log(UVcoordinates[i][0][2])
+//            }
 
-                    this.position.sub(point);
-                    this.position.applyQuaternion(q1);
-                    this.position.add(point);
+
+            SELECTED = null;
+        }
+    }
+
+    //    function texturePlane() {
+    ////        vertices = [
+    ////            new THREE.Vector3(1, 0, 0), // 0
+    ////            new THREE.Vector3(-1, 0, 5), // 1
+    ////            new THREE.Vector3(0, 1, 5), // 2
+    //////            new THREE.Vector3(2, 1, 0), // 2
+    ////        ];
+    ////
+    ////        faces = [
+    ////            new THREE.Face3(0, 2, 1), // 0
+    //////            new THREE.Face3(0, 3, 2), // 0
+    ////        ];
+    //        faces = [];
+    //        initIcosaedro();
+    //
+    //
+    //        scene = new THREE.Scene();
+    //        camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    //
+    //        camera.position.set(-5, 1, 3);
+    //        camera.lookAt(scene.position);
+    //
+    //        rotSpeed = 0.001;
+    //        controls = new THREE.OrbitControls(camera);
+    //        controls.addEventListener('change', render);
+    //        scene.add(camera);
+    //        renderer = new THREE.WebGLRenderer();
+    //        renderer.setSize(window.innerWidth, window.innerHeight);
+    //        document.body.appendChild(renderer.domElement);
+    //
+    //
+    //        texture = THREE.ImageUtils.loadTexture('images/noel.jpg');
+    //        texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+    //
+    //        material = new THREE.MeshBasicMaterial({map: texture, side: THREE.DoubleSide});
+    //
+    //        for (var i = 0; i < faces.length; i += 1) {
+    //            var geom = new THREE.Geometry();
+    //            geom.vertices = vertices;
+    //            var face = faces[i];
+    //            var color = Math.random() * 0xffffff;
+    //            face.color.setHex(color);
+    //            geom.faces = [face];
+    //            geom.computeFaceNormals();
+    //
+    //            geom.faceVertexUvs[0] = [];
+    //
+    //            geometries.push(geom);
+    //
+    //            var mesh = new THREE.Mesh(geom);
+    //            targetList.push(mesh);
+    //            scene.add(mesh);
+    //
+    //
+    //        }
+    //
+    //        var offset = new THREE.Vector2(0, 0);
+    //        var range = new THREE.Vector2(1, 1);
+    //
+    //        for (var i = 0; i < targetList.length; i++) {
+    //            targetList[i].geometry.faceVertexUvs[0] = [];
+    //
+    //            var v1 = vertices[targetList[i].geometry.faces[0].a],
+    //                v2 = vertices[targetList[i].geometry.faces[0].b],
+    //                v3 = vertices[targetList[i].geometry.faces[0].c];
+    //
+    //            targetList[i].geometry.faceVertexUvs[0].push([
+    //                new THREE.Vector2((v1.x + offset.x) / range.x, (v1.y + offset.y) / range.y),
+    //                new THREE.Vector2((v2.x + offset.x) / range.x, (v2.y + offset.y) / range.y),
+    //                new THREE.Vector2((v3.x + offset.x) / range.x, (v3.y + offset.y) / range.y)
+    //            ]);
+    //            targetList[i].geometry.uvsNeedUpdate = true;
+    //
+    ////            targetList[i].material = material;
+    //            targetList[i].material.needsUpdate = true;
+    //        }
+    //
+    //
+    ////        geom = new THREE.Geometry();
+    ////        geom.vertices = vertices;
+    ////        geom.faces = [faces[0]];
+    ////        geom.computeFaceNormals();
+    //
+    //
+    ////        var mesh = new THREE.Mesh(geom);
+    ////        scene.add(mesh);
+    //
+    //
+    ////        var texture = THREE.ImageUtils.loadTexture('images/noel.jpg');
+    ////        texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+    ////
+    ////        var material = new THREE.MeshBasicMaterial({map: texture, side: THREE.DoubleSide});
+    ////
+    ////
+    ////        var offset = new THREE.Vector2(0, 0);
+    ////        var range = new THREE.Vector2(1, 1);
+    ////
+    ////        for (var j = 0 ; j < targetList.length ; j++){
+    ////
+    ////
+    ////
+    ////            targetList[j].geometry.faceVertexUvs[0] = [];
+    ////            for (var i = 0; i < faces.length; i++) {
+    ////
+    ////                var v1 = targetList[j].geometry.vertices[faces[i].a],
+    ////                    v2 = targetList[j].geometry.vertices[faces[i].b],
+    ////                    v3 = targetList[j].geometry.vertices[faces[i].c];
+    ////
+    ////                targetList[j].geometry.faceVertexUvs[0].push([
+    ////                    new THREE.Vector2((v1.x + offset.x) / range.x, (v1.y + offset.y) / range.y),
+    ////                    new THREE.Vector2((v2.x + offset.x) / range.x, (v2.y + offset.y) / range.y),
+    ////                    new THREE.Vector2((v3.x + offset.x) / range.x, (v3.y + offset.y) / range.y)
+    ////                ]);
+    ////            }
+    ////            targetList[j].geometry.uvsNeedUpdate = true;
+    ////
+    ////
+    ////
+    ////            targetList[j].material = material;
+    ////        }
+    //
+    //
+    ////        var faces = geom1.faces;
+    ////        geom1.faceVertexUvs[0] = [];
+    ////        for (var i = 0; i < faces.length; i++) {
+    ////
+    ////            var v1 = geom1.vertices[faces[i].a],
+    ////                v2 = geom1.vertices[faces[i].b],
+    ////                v3 = geom1.vertices[faces[i].c];
+    ////
+    ////            geom1.faceVertexUvs[0].push([
+    ////                new THREE.Vector2((v1.x + offset.x) / range.x, (v1.y + offset.y) / range.y),
+    ////                new THREE.Vector2((v2.x + offset.x) / range.x, (v2.y + offset.y) / range.y),
+    ////                new THREE.Vector2((v3.x + offset.x) / range.x, (v3.y + offset.y) / range.y)
+    ////            ]);
+    ////        }
+    ////        geom1.uvsNeedUpdate = true;
+    //
+    //
+    ////        console.log(geom.faceVertexUvs[0][0][0]);
+    ////        console.log(geom.faceVertexUvs[0][0][1]);
+    ////        console.log(geom.faceVertexUvs[0][0][2]);
+    //
+    ////
+    ////        console.log(geom1.faceVertexUvs[0][0][0]);
+    ////        console.log(geom1.faceVertexUvs[0][0][1]);
+    ////        console.log(geom1.faceVertexUvs[0][0][2]);
+    //
+    //
+    ////        var mesh1 = new THREE.Mesh(geom1, material);
+    //        scene.add(mesh);
+    ////        scene.add(mesh1);
+    //
+    //        geometries.push(geom);
+    ////        geometries.push(geom1);
+    //
+    //        document.addEventListener('mousedown', abrirPoliedro, false);
+    //        window.addEventListener('resize', onWindowResize, false);
+    //
+    //
+    //    }
+
+    function editMode(){
+        if (editOn) {
+//            controls.enabled = true;
 
 
-
-                    return this;
-                };
-
-            }();
-
-            function resetVertices() {
-                verticeAtual = [];
-                for (var i = 0; i < faces.length; i += 1) {
-                    verticeAtual[i] = [];
-                    for (var j = 0; j < vertices.length; j += 1) {
-                        verticeAtual[i][j] = new THREE.Vector3();
-                        verticeAtual[i][j].copy(vertices[j]);
-                    }
-                }
+            if (open) {
+                document.addEventListener('mousedown', fecharPoliedro, false);
+                document.removeEventListener('mousedown', abrirPoliedro);
+            } else {
+                document.addEventListener('mousedown', abrirPoliedro, false);
+                document.removeEventListener('mousedown', fecharPoliedro);
             }
 
+            disableEditMeshes();
+            renderer.domElement.removeEventListener('mousemove', onDocumentMouseMove);
+            renderer.domElement.removeEventListener('mousedown', onDocumentMouseDown);
+            renderer.domElement.removeEventListener('mouseup', onDocumentMouseUp);
 
-            function mudarPoliedro(p) {
-                poliedro = p;
-                start();
+        } else {
+
+            if (UVcoordinates.length > 0) {
+//                controls.enabled = false;
+                editOn = true;
+//                camera.updateMatrixWorld();
+//                cameraPosition = camera.position.clone();
+//                console.log(cameraPosition);
+                drawTexturePlane2d();
+                renderer.domElement.addEventListener('mousemove', onDocumentMouseMove, false);
+                renderer.domElement.addEventListener('mousedown', onDocumentMouseDown, false);
+                renderer.domElement.addEventListener('mouseup', onDocumentMouseUp, false);
+
+                document.removeEventListener('mousedown', fecharPoliedro);
+                document.removeEventListener('mousedown', abrirPoliedro);
+            } else {
+                effectController.editor = false;
             }
+        }
+    }
 
 
-            function start() {
-                document.getElementById('escolha').style.display = 'none';
-                init();
-                animate();
+    function updateGui(){
+        gui.remove(checkEditor);
+        checkEditor = gui.add( effectController, "editor" ).onChange( editMode );
+    }
+    function setupGui() {
+       effectController = {
+            shininess: 40.0,
+            ka: 0.17,
+            kd: 0.51,
+            ks: 0.2,
+            editor: false,
+            hue:		0.121,
+            saturation: 0.73,
+            lightness:  0.66,
+            lhue:		 0.04,
+            lsaturation: 0.01,	// non-zero so that fractions will be shown
+            llightness:  1.0,
+            // bizarrely, if you initialize these with negative numbers, the sliders
+            // will not show any decimal places.
+            lx: 0.32,
+            ly: 0.39,
+            lz: 0.7,
+            newTess: 15,
+            bottom: true,
+            lid: true,
+            body: true,
+            fitLid: false,
+            nonblinn: false,
+            poliedro: "icosaedro",
+            name: "Caio Ramos",
+            icosaedro: function () {
+                mudarPoliedro('icosaedro');
+            },
+            octaedro: function () {
+                mudarPoliedro('octaedro');
+            },
+            tetraedro: function () {
+                mudarPoliedro('tetraedro');
+            },
+           noel: function () {
+               textureName = "images/noel.jpg";
+               texture = new THREE.TextureLoader().load(textureName);
 
-            }
+               clearSceneAndDraw();
+           },
+           arvore: function () {
+               textureName = "images/arvore.jpg";
+               texture = new THREE.TextureLoader().load(textureName);
+
+               clearSceneAndDraw();
+           },
+           esperanca: function () {
+               textureName = "images/esperanca.jpg";
+               texture = new THREE.TextureLoader().load(textureName);
+               clearSceneAndDraw();
+           }
+        };
+        var h;
+        gui = new dat.GUI();
+        // material (attributes)
+        gui.add(effectController, "name");
 
 
-        </script>
+        h = gui.addFolder( "Selecionar Poliedro" );
+        h.add( effectController, "icosaedro" ).name( "Icosaedro" );
+        h.add( effectController, "octaedro" ).name( "Octaedro" );
+        h.add( effectController, "tetraedro" ).name( "Tetraedro" );
+
+        h = gui.addFolder( "Selecionar Textura" );
+        h.add( effectController, "noel" ).name( "Papai noel" );
+        h.add( effectController, "arvore" ).name( "Árvore de natal" );
+        h.add( effectController, "esperanca" ).name( "Cláudio Esperança" );
+
+        checkEditor = gui.add( effectController, "editor" ).onChange( editMode );
+
+    }
 
 
+
+
+    poliedro = 'icosaedro';
+    setupGui();
+    init();
+    animate();
+
+
+</script>
+
+<!--
         <div id="escolha">
             <center>
                 <b>Caio César Riqueza Ramos </b>
@@ -547,12 +1338,13 @@
                 <br>
                 <button onClick="mudarPoliedro('icosaedro')">Icosaedro</button>
                 <button onClick="mudarPoliedro('tetraedro')">Tetraedro</button>
-                <button onClick="mudarPoliedro('octaedro')">Octaedro</button>           
+                <button onClick="mudarPoliedro('octaedro')">Octaedro</button>
 
 
 
 
             </center>
-        </div>
-    </body>
+        </div> -->
+
+</body>
 </html>
